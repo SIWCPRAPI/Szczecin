@@ -1,0 +1,1157 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CPR – Lista zgłoszeń</title>
+  <style>
+    /* Ogólne style */
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    h2 { margin-top: 20px; }
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      background-color: gray; padding: 10px; color: white;
+    }
+    .button-container {
+      display: flex; gap: 10px;
+    }
+    .button-container button {
+      background-color: #ccc; color: black;
+      padding: 10px 20px; border-radius: 5px; border: none; cursor: pointer;
+    }
+    /* Sekcja filtrów */
+    #filterSection {
+      display: none; margin: 10px; padding: 10px;
+      border: 1px solid #ccc; border-radius: 5px;
+      background-color: #f4f4f4;
+    }
+    #filterSection label { margin-right: 10px; }
+    /* Tabele */
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td {
+      border: 1px solid black; padding: 8px; text-align: left; font-size: 12px;
+    }
+    .opis-col { display: none; }
+    .tooltip {
+      position: relative; cursor: pointer;
+    }
+    .tooltip:hover::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #333;
+      color: #fff;
+      padding: 5px;
+      border-radius: 3px;
+      white-space: normal;
+      width: 750px;
+      word-break: break-word;
+      z-index: 10;
+      opacity: 1;
+      pointer-events: none;
+    }
+    /* Statusy */
+    .status-nowe { background-color: red; color: white; }
+    .status-przekazane { animation: blink-bg 1s infinite alternate; }
+    @keyframes blink-bg { 0% { background-color: green; } 100% { background-color: white; } }
+    .status-nieobslugiwane { background-color: lightgreen; }
+    .status-obslugiwane { background-color: yellow; }
+    .status-zakonczone { background-color: gray; color: white; }
+    .related-event { background-color: #f9f9f9; font-size: 11px; }
+    /* Modal logowania */
+    #loginModal {
+      display: none; position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%; background-color: rgba(0,0,0,0.7);
+      z-index: 1000;
+    }
+    #loginModalContent {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff; padding: 20px; border-radius: 5px;
+      width: 300px; text-align: center;
+    }
+    #loginModalContent img { max-width: 100%; height: auto; margin-bottom: 10px; }
+    #loginModalContent input { width: 100%; padding: 8px; margin-bottom: 10px; box-sizing: border-box; }
+    #loginModalContent button { width: 100%; padding: 8px; cursor: pointer; }
+    #loginError { color: red; display: none; }
+    /* Sekcje – domyślnie ukryte (poza główną) */
+    section { display: none; padding: 20px; }
+    /* Formatka – dodatkowe style */
+    #formSection .top-bar { margin-bottom: 10px; }
+    .top-left { display: flex; gap: 15px; align-items: center; }
+    .top-right { display: flex; align-items: center; }
+    .section { margin: 20px 0; padding: 10px; border: 1px solid #ccc;
+      border-radius: 5px; display: flex; align-items: center; gap: 10px; }
+    .category-description {
+      display: flex; width: 100%; align-items: flex-start; gap: 20px;
+    }
+    .category-description select { width: 200px; }
+    .category-description .description-container {
+      flex-grow: 1; display: flex; flex-direction: column;
+    }
+    .category-description textarea {
+      width: 100%; height: 120px; resize: vertical;
+    }
+    .wide-input { width: 80%; }
+    .button-group {
+      margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;
+    }
+    .save-btn, .send-btn, .update-btn, .close-btn, .similar-btn {
+      background-color: #e0e0e0; color: black;
+      border: 1px solid #ccc; border-radius: 5px;
+      padding: 10px 20px; cursor: pointer;
+    }
+    .address-fields {
+      display: flex; gap: 5px; flex-wrap: wrap;
+    }
+    .address-fields input { width: auto; }
+    /* Statystyki */
+    .filters { margin-bottom: 20px; }
+    .filters input { margin-right: 10px; padding: 5px; }
+    /* Komunikaty */
+    button.clear-btn {
+      background: #e1e1e1; border: 1px solid #aaa;
+      padding: 5px 10px; cursor: pointer; margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Modal logowania -->
+  <div id="loginModal">
+    <div id="loginModalContent">
+      <img src="file:///C:/Users/micha/Desktop/CPR/Grafika/logocpr.png" alt="Logo CPR">
+      <h2>Logowanie</h2>
+      <input type="text" id="loginUser" placeholder="Login">
+      <input type="password" id="loginPass" placeholder="Hasło">
+      <button onclick="doLogin()">Zaloguj</button>
+      <p id="loginError">Błędne dane logowania</p>
+    </div>
+  </div>
+
+  <!-- Pasek nagłówkowy – zawsze widoczny -->
+  <div class="top-bar">
+    <div class="button-container">
+      <button onclick="showSection('reportsSection')">Lista zgłoszeń</button>
+      <button onclick="showSection('formSection')">Nowe zdarzenie</button>
+      <button onclick="clearReports()">Usuń dane</button>
+      <button onclick="showSection('statsSection')">Statystyki</button>
+      <button onclick="doLogout()">Wyloguj</button>
+      <button onclick="toggleFilters()">Pokaż/Ukryj filtry</button>
+      <button onclick="showSection('notificationsSection')">Komunikaty</button>
+    </div>
+    <div id="activeEventsCount"></div>
+    <div id="currentDateTime"></div>
+  </div>
+
+  <!-- Sekcja Lista zgłoszeń (główna strona) -->
+  <section id="reportsSection">
+    <h2>Lista zgłoszeń</h2>
+    <div id="filterSection">
+      <label>ID: <input type="text" id="filterID" oninput="loadReports()"></label>
+      <label>Status: 
+        <select id="filterStatus" onchange="loadReports()">
+          <option value="">Wszystkie</option>
+          <option value="Nowe">Nowe</option>
+          <option value="Przekazane przez CPR">Przekazane przez CPR</option>
+          <option value="Nieobsługiwane">Nieobsługiwane</option>
+          <option value="Obsługiwane">Obsługiwane</option>
+          <option value="Zakończone">Zakończone</option>
+        </select>
+      </label>
+      <label>Data: <input type="date" id="filterDate" onchange="loadReports()"></label>
+      <label>Adres: <input type="text" id="filterAddress" oninput="loadReports()"></label>
+      <label>Priorytet: <input type="text" id="filterPriority" oninput="loadReports()"></label>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Data i czas</th>
+          <th>Numer telefonu</th>
+          <th>Adres</th>
+          <th>Kategoria</th>
+          <th class="opis-col">Opis</th>
+          <th>Priorytet</th>
+          <th>Policja</th>
+          <th>PSP</th>
+          <th>PRM</th>
+          <th>Status CPR</th>
+          <th>Przyjął</th>
+        </tr>
+      </thead>
+      <tbody id="reportsTable"></tbody>
+    </table>
+  </section>
+
+  <!-- Sekcja Formatka (formularz zdarzenia) -->
+  <section id="formSection">
+    <div class="top-bar">
+      <div class="top-left">
+        <span>ID zgłoszenia: <strong id="reportId"></strong></span>
+        <span>Data i godzina: <strong id="dateTime"></strong></span>
+        <span>Nr telefonu: <input type="text" id="phone"></span>
+      </div>
+      <div class="top-right">
+        <label>Status CPR:</label>
+        <select id="status">
+          <option value="Nowe">Nowe</option>
+          <option value="Przekazane przez CPR">Przekazane przez CPR</option>
+          <option value="Nieobsługiwane">Nieobsługiwane</option>
+          <option value="Obsługiwane">Obsługiwane</option>
+          <option value="Zakończone">Zakończone</option>
+        </select>
+      </div>
+    </div>
+    <!-- Pole "Zdarzenie główne" -->
+    <div style="margin: 10px 0;">
+      <label>Zdarzenie główne:</label>
+      <select id="mainEvent" style="width: 300px;"></select>
+    </div>
+    <h2>FORMATKA</h2>
+    <h3>Lokalizacja zdarzenia</h3>
+    <div class="section">
+      <label>Adres:</label>
+      <div class="address-fields">
+        <input type="text" id="city" list="cityList" placeholder="Miejscowość">
+        <datalist id="cityList"></datalist>
+        <input type="text" id="street" list="streetList" placeholder="Ulica">
+        <datalist id="streetList"></datalist>
+        <input type="text" id="buildingNumber" list="buildingNumberList" placeholder="Nr budynku">
+        <datalist id="buildingNumberList"></datalist>
+        <input type="text" id="apartmentNumber" list="apartmentNumberList" placeholder="Nr lokalu">
+        <datalist id="apartmentNumberList"></datalist>
+        <input type="text" id="roadNumber" list="roadNumberList" placeholder="Nr drogi">
+        <datalist id="roadNumberList"></datalist>
+        <input type="text" id="county" list="countyList" placeholder="Powiat">
+        <datalist id="countyList"></datalist>
+        <input type="text" id="commune" list="communeList" placeholder="Gmina">
+        <datalist id="communeList"></datalist>
+      </div>
+      <button onclick="openGeoSystem()">Geo-System</button>
+    </div>
+    <h3>Szczegóły zdarzenia</h3>
+    <div class="section category-description">
+      <div>
+         <label>Kategoria:</label>
+         <input type="text" id="categoryFilter" placeholder="Filtruj kategorię...">
+         <select id="category">
+           <!-- Pełna lista opcji kategorii -->
+           <option value=""></option>
+           <option value="CPR/ pomyłka">CPR/ pomyłka</option>
+           <option value="CPR/ złośliwe">CPR/ złośliwe</option>
+           <option value="CPR/ niezasadne">CPR/ niezasadne</option>
+           <option value="Inne/ nieokreślone">Inne/ nieokreślone</option>
+           <option value=""></option>
+           <option value="Kryminalne/ zabójstwo">Kryminalne/ zabójstwo</option>
+           <option value="Kryminalne/ bójka, pobicie">Kryminalne/ bójka, pobicie</option>
+           <option value="Kryminalne/ naruszenie nietykalności cielesnej">Kryminalne/ naruszenie nietykalności cielesnej</option>
+           <option value="Kryminalne/ groźby karalne">Kryminalne/ groźby karalne</option>
+           <option value="Kryminalne/ kradzież, włamanie">Kryminalne/ kradzież, włamanie</option>
+           <option value="Kryminalne/ rozbój">Kryminalne/ rozbój</option>
+           <option value="Kryminalne/ przestępstwo seksualne">Kryminalne/ przestępstwo seksualne</option>
+           <option value="Kryminalne/ narkotyki">Kryminalne/ narkotyki</option>
+           <option value="Kryminalne/ niebezpieczne narzędzie">Kryminalne/ niebezpieczne narzędzie</option>
+           <option value="Kryminalne/ zniszczenie mienia">Kryminalne/ zniszczenie mienia</option>
+           <option value="Kryminalne/ inne zdarzenie kryminalne">Kryminalne/ inne zdarzenie kryminalne</option>
+           <option value="Kryminalne/ ujawnienie zwłok">Kryminalne/ ujawnienie zwłok</option>
+           <option value="Porządkowe/ kradzież sklepowa">Porządkowe/ kradzież sklepowa</option>
+           <option value="Porządkowe/ przywłaszczenie">Porządkowe/ przywłaszczenie</option>
+           <option value="Porządkowe/ zakłócenie ciszy nocnej">Porządkowe/ zakłócenie ciszy nocnej</option>
+           <option value="Porządkowe/ zakłócanie porządku publicznego">Porządkowe/ zakłócanie porządku publicznego</option>
+           <option value="Porządkowe/ spożywanie alkoholu w miejscach zabronionych">Porządkowe/ spożywanie alkoholu w miejscach zabronionych</option>
+           <option value="Porządkowe/ wandalizm i dewastacja mienia">Porządkowe/ wandalizm i dewastacja mienia</option>
+           <option value="Drogowe/ kolizja">Drogowe/ kolizja</option>
+           <option value="Drogowe/ inne zdarzenie drogowe">Drogowe/ inne zdarzenie drogowe</option>
+           <option value="Drogowe/ wypadek komunikacyjny">Drogowe/ wypadek komunikacyjny</option>
+           <option value="Drogowe/ jazda pod wpływem alkoholu lub środków odurzających">Drogowe/ jazda pod wpływem alkoholu lub środków odurzających</option>
+           <option value="Drogowe/ przekroczenia prędkości">Drogowe/ przekroczenia prędkości</option>
+           <option value="Drogowe/ niebezpieczne manewry i zachowanie kierowcy">Drogowe/ niebezpieczne manewry i zachowanie kierowcy</option>
+           <option value="Drogowe/ zagrożenie w ruchu drogowym">Drogowe/ zagrożenie w ruchu drogowym</option>
+           <option value="Drogowe/ wykroczenie RD">Drogowe/ wykroczenie RD</option>
+           <option value="Domowe/ przemoc domowa">Domowe/ przemoc domowa</option>
+           <option value="Domowe/ zaniedbanie opieki nad dziećmi">Domowe/ zaniedbanie opieki nad dziećmi</option>
+           <option value="Domowe/ konflikt sąsiedzki">Domowe/ konflikt sąsiedzki</option>
+           <option value="Domowe/ awantura domowa">Domowe/ awantura domowa</option>
+           <option value="Gospodarcze/ oszustwo finansowe">Gospodarcze/ oszustwo finansowe</option>
+           <option value="Gospodarcze/ wyłudzenie kredytu i świadczeń">Gospodarcze/ wyłudzenie kredytu i świadczeń</option>
+           <option value="Gospodarcze/ korupcja, łapownictwo">Gospodarcze/ korupcja, łapownictwo</option>
+           <option value="Zaginięcia/ zaginięcie osoby dorosłej">Zaginięcia/ zaginięcie osoby dorosłej</option>
+           <option value="Zaginięcie/ zaginięcie dziecka">Zaginięcie/ zaginięcie dziecka</option>
+           <option value="Zaginięcie/ porwanie, uprowadzenie">Zaginięcie/ porwanie, uprowadzenie</option>
+           <option value="Inne/ znęcanie się nad zwierzętami">Inne/ znęcanie się nad zwierzętami</option>
+           <option value="Inne/ niebezpieczne zwierzę">Inne/ niebezpieczne zwierzę</option>
+           <option value="Inne/ podejrzany przedmiot">Inne/ podejrzany przedmiot</option>
+           <option value="Inne/ zagrożenie terrorystyczne">Inne/ zagrożenie terrorystyczne</option>
+           <option value="Inne/ incydenty ekologiczne i chemiczne">Inne/ incydenty ekologiczne i chemiczne</option>
+           <option value="Inne/ łamanie zakazów i nakazów">Inne/ łamanie zakazów i nakazów</option>
+           <option value="Inne/ inna interwencja policyjna">Inne/ inna interwencja policyjna</option>
+           <option value=""></option>
+           <option value="Pożar/ budynku mieszkalnego">Pożar/ budynku mieszkalnego</option>
+           <option value="Pożar/ obiektu przemysłowego">Pożar/ obiektu przemysłowego</option>
+           <option value="Pożar/ budynku gospodarczego">Pożar/ budynku gospodarczego</option>
+           <option value="Pożar/ pojazdu">Pożar/ pojazdu</option>
+           <option value="Pożar/ terenów leśnych, łąk, pól, traw">Pożar/ terenów leśnych, łąk, pól, traw</option>
+           <option value="Pożar/ kontenerów na odpady, wysypisk śmieci">Pożar/ kontenerów na odpady, wysypisk śmieci</option>
+           <option value="Pożar/ pojemnika na śmieci">Pożar/ pojemnika na śmieci</option>
+           <option value="Pożar/ inne">Pożar/ inne</option>
+           <option value="Pożar/ kominów, instalacji grzewczych">Pożar/ kominów, instalacji grzewczych</option>
+           <option value="Ekologiczne/ skażenie wody, gleby, powietrza">Ekologiczne/ skażenie wody, gleby, powietrza</option>
+           <option value="Chemiczne/ zagrożenia radiologiczne">Chemiczne/ zagrożenia radiologiczne</option>
+           <option value="Chemiczne/ wycieki substancji chemicznych">Chemiczne/ wycieki substancji chemicznych</option>
+           <option value="Wypadek/ drogowy">Wypadek/ drogowy</option>
+           <option value="Wypadek/ kolejowy">Wypadek/ kolejowy</option>
+           <option value="Wypadek/ lotniczy">Wypadek/ lotniczy</option>
+           <option value="Wypadek/ wodny">Wypadek/ wodny</option>
+           <option value="Techniczne/ osoba zakleszczona w pojeździe">Techniczne/ osoba zakleszczona w pojeździe</option>
+           <option value="Techniczne/ otwarcie mieszkania">Techniczne/ otwarcie mieszkania</option>
+           <option value="Techniczne/ powalone drzewo, konar, słup">Techniczne/ powalone drzewo, konar, słup</option>
+           <option value="Wodne/ poszukiwanie osoby zaginionej na akwenie">Wodne/ poszukiwanie osoby zaginionej na akwenie</option>
+           <option value="Wodne/ ratowanie tonącego">Wodne/ ratowanie tonącego</option>
+           <option value="Wysokościowe/ osoba zagrożona na wysokości">Wysokościowe/ osoba zagrożona na wysokości</option>
+           <option value="Wysokościowe/ interwencje na dachach, wieżach, kominach">Wysokościowe/ interwencje na dachach, wieżach, kominach</option>
+           <option value="Pomoc/ pierwsza pomoc">Pomoc/ pierwsza pomoc</option>
+           <option value="Pomoc/ wsparcie dla PRM">Pomoc/ wsparcie dla PRM</option>
+           <option value="Pomoc/ zabezpieczenie miejsca zdarzenia">Pomoc/ zabezpieczenie miejsca zdarzenia</option>
+           <option value="Miejscowe zagrożenie/ wyciek gazu">Miejscowe zagrożenie/ wyciek gazu</option>
+           <option value="Miejscowe zagrożenie/ zatrucia tlenkiem węgla">Miejscowe zagrożenie/ zatrucia tlenkiem węgla</option>
+           <option value="Miejscowe zagrożenie/ tlenek węgla">Miejscowe zagrożenie/ tlenek węgla</option>
+           <option value="Miejscowe zagrożenie/ uruchomiony czujnik dymu">Miejscowe zagrożenie/ uruchomiony czujnik dymu</option>
+           <option value="Miejscowe zagrożenie/ ulatniający się gaz">Miejscowe zagrożenie/ ulatniający się gaz</option>
+           <option value="Miejscowe zagrożenie/ uszkodzenie urządzenia elektrycznego">Miejscowe zagrożenie/ uszkodzenie urządzenia elektrycznego</option>
+           <option value="Miejscowe zagrożenia/ z udziałem zwierząt">Miejscowe zagrożenia/ z udziałem zwierząt</option>
+           <option value="Miejscowe zagrożenie/ alarm automatyczny">Miejscowe zagrożenie/ alarm automatyczny</option>
+           <option value="Miejscowe zagrożenie/ plama oleju, innej substancji">Miejscowe zagrożenie/ plama oleju, innej substancji</option>
+           <option value="Miejscowe zagrożenie/ powódź, podtopienie">Miejscowe zagrożenie/ powódź, podtopienie</option>
+           <option value="Miejscowe zagrożenie/ uszkodzony budynek">Miejscowe zagrożenie/ uszkodzony budynek</option>
+           <option value="PSP/ inne, nieokreślone">PSP/ inne, nieokreślone</option>
+           <option value=""></option>
+           <option value="Nagłe zachorowania/ zawał serca">Nagłe zachorowania/ zawał serca</option>
+           <option value="Nagłe zachorowania/ zaburzenia rytmu serca">Nagłe zachorowania/ zaburzenia rytmu serca</option>
+           <option value="Nagłe zachorowania/ udar mózgu">Nagłe zachorowania/ udar mózgu</option>
+           <option value="Nagłe zachorowania/ utrata przytomności">Nagłe zachorowania/ utrata przytomności</option>
+           <option value="Nagłe zachorowania/ silny ból">Nagłe zachorowania/ silny ból</option>
+           <option value="Nagłe zachorowania/ problemy z oddychaniem">Nagłe zachorowania/ problemy z oddychaniem</option>
+           <option value="Nagłe zachorowania/ złe samopoczucie">Nagłe zachorowania/ złe samopoczucie</option>
+           <option value="Nagłe zachorowania/ napad padaczkowy">Nagłe zachorowania/ napad padaczkowy</option>
+           <option value="Nagłe zachorowania/ reakcja alergiczna, wstrząs">Nagłe zachorowania/ reakcja alergiczna, wstrząs</option>
+           <option value="Nagłe zachorowania/ omdlenie">Nagłe zachorowania/ omdlenie</option>
+           <option value="Nagłe zachorowania/ inne">Nagłe zachorowania/ inne</option>
+           <option value="Wypadki/ potrącenie pieszego, rowerzysty">Wypadki/ potrącenie pieszego, rowerzysty</option>
+           <option value="Wypadki/ drogowe">Wypadki/ drogowe</option>
+           <option value="Wypadki/ wodne">Wypadki/ wodne</option>
+           <option value="Wypadki/ inne">Wypadki/ inne</option>
+           <option value="Urazy i złamania/ złamanie, skręcenie">Urazy i złamania/ złamanie, skręcenie</option>
+           <option value="Urazy i złamania/ uraz głowy, kręgosłupa">Urazy i złamania/ uraz głowy, kręgosłupa</option>
+           <option value="Urazy i złamania/ obrażenia powypadkowe">Urazy i złamania/ obrażenia powypadkowe</option>
+           <option value="Zatrucia/ lekami, substancjami chemicznymi">Zatrucia/ lekami, substancjami chemicznymi</option>
+           <option value="Zatrucia/ alkohol, narkotyki">Zatrucia/ alkohol, narkotyki</option>
+           <option value="Zatrucia/ pokarmowe">Zatrucia/ pokarmowe</option>
+           <option value="Zagrożenie życia/ gorączka z drgawkami">Zagrożenie życia/ gorączka z drgawkami</option>
+           <option value="Zagrożenie życia/ duszność">Zagrożenie życia/ duszność</option>
+           <option value="Zagrożenie życia/ ból w klatce piersiowej">Zagrożenie życia/ ból w klatce piersiowej</option>
+           <option value="Zagrożenie życia/ utrata przytomności">Zagrożenie życia/ utrata przytomności</option>
+           <option value="Zagrożenie życia/ osoba nieprzytomna, oddycha">Zagrożenie życia/ osoba nieprzytomna, oddycha</option>
+           <option value="Zagrożenie życia/ krwotok">Zagrożenie życia/ krwotok</option>
+           <option value="Zagrożenie życia/ rana kłuta">Zagrożenie życia/ rana kłuta</option>
+           <option value="Zagrożenie życia/ rana szarpana">Zagrożenie życia/ rana szarpana</option>
+           <option value="Zagrożenie życia/ amputacja">Zagrożenie życia/ amputacja</option>
+           <option value="Zagrożenie życia/ porażenie prądem">Zagrożenie życia/ porażenie prądem</option>
+           <option value="Zagrożenie życia/ zadławienie">Zagrożenie życia/ zadławienie</option>
+           <option value="Zagrożenie życia/ inne">Zagrożenie życia/ inne</option>
+           <option value="Zaburzenia psychiczne/ próba samobójcza">Zaburzenia psychiczne/ próba samobójcza</option>
+           <option value="Zaburzenia psychiczne/ myśli samobójcze">Zaburzenia psychiczne/ myśli samobójcze</option>
+           <option value="Zaburzenia psychiczne/ samookaleczenie">Zaburzenia psychiczne/ samookaleczenie</option>
+           <option value="Zaburzenia psychiczne/ agresywne zachowanie">Zaburzenia psychiczne/ agresywne zachowanie</option>
+           <option value="Zaburzenia psychiczne/ atak paniki, silny stres">Zaburzenia psychiczne/ atak paniki, silny stres</option>
+           <option value="Zaburzenia psychiczne/ inne">Zaburzenia psychiczne/ inne</option>
+           <option value="Ciąża/ poród poza szpitalem">Ciąża/ poród poza szpitalem</option>
+           <option value="Ciąża/ krwawienie i komplikacje">Ciąża/ krwawienie i komplikacje</option>
+           <option value="Ciąża/ nagłe problemy zdrowotne">Ciąża/ nagłe problemy zdrowotne</option>
+           <option value="NZK/ nagłe zatrzymanie krążenia">NZK/ nagłe zatrzymanie krążenia</option>
+           <option value="Przewlekłe/ cukrzyca">Przewlekłe/ cukrzyca</option>
+           <option value="Przewlekłe/ astma">Przewlekłe/ astma</option>
+           <option value="Przewlekłe/ nadciśnienie">Przewlekłe/ nadciśnienie</option>
+           <option value="Inne/ skaleczenie">Inne/ skaleczenie</option>
+           <option value="Inne/ zgon">Inne/ zgon</option>
+           <option value="PRM/ inne, nieokreślone">PRM/ inne, nieokreślone</option>
+         </select>
+         <br>
+         <label>Priorytet:</label>
+         <select id="priority">
+           <option value=""></option>
+           <option value="-">-</option>
+           <option value="1">1</option>
+           <option value="2">2</option>
+           <option value="3">3</option>
+           <option value="4">4</option>
+           <option value="5">5</option>
+         </select>
+      </div>
+      <div class="description-container">
+         <label>Opis:</label>
+         <textarea id="description" placeholder="Wpisz szczegóły zgłoszenia..."></textarea>
+      </div>
+    </div>
+    <h3>Służby</h3>
+    <div class="section">
+      <img src="C:/Users/micha/Desktop/CPR/Grafika/policja-logo.jpg" alt="Policja" style="height:50px; margin-right:15px;">
+      <label>Policja:</label>
+      <select id="police">
+         <option value=""></option>
+         <option>KMP Szczecin</option>
+         <option>KMP Koszalin</option>
+         <option>KMP Świnoujście</option>
+         <option>KPP Białogard</option>
+         <option>KPP Choszczno</option>
+         <option>KPP Drawsko Pom</option>
+         <option>KPP Goleniów</option>
+         <option>KPP Gryfice</option>
+         <option>KPP Gryfino</option>
+         <option>KPP Kamień Pom</option>
+         <option>KPP Kołobrzeg</option>
+         <option>KPP Łobez</option>
+         <option>KPP Myślibórz</option>
+         <option>KPP Police</option>
+         <option>KPP Pyrzyce</option>
+         <option>KPP Sławno</option>
+         <option>KPP Stargard</option>
+         <option>KPP Szczecinek</option>
+         <option>KPP Świdwin</option>
+         <option>KPP Wałcz</option>
+      </select>
+      <img src="C:/Users/micha/Desktop/CPR/Grafika/psp-logo.jpg" alt="PSP" style="height:50px; margin-right:15px;">
+      <label>PSP:</label>
+      <select id="psp">
+         <option value=""></option>
+         <option>KM PSP Szczecin</option>
+         <option>KM PSP Koszalin</option>
+         <option>KM PSP Świnoujście</option>
+         <option>KP PSP Białogard</option>
+         <option>KP PSP Choszczno</option>
+         <option>KP PSP Drawsko Pom</option>
+         <option>KP PSP Goleniów</option>
+         <option>KP PSP Gryfice</option>
+         <option>KP PSP Gryfino</option>
+         <option>KP PSP Kamień Pom</option>
+         <option>KP PSP Kołobrzeg</option>
+         <option>KP PSP Łobez</option>
+         <option>KP PSP Myślibórz</option>
+         <option>KP PSP Police</option>
+         <option>KP PSP Pyrzyce</option>
+         <option>KP PSP Sławno</option>
+         <option>KP PSP Stargard</option>
+         <option>KP PSP Szczecinek</option>
+         <option>KP PSP Świdwin</option>
+         <option>KP PSP Wałcz</option>
+      </select>
+      <img src="C:/Users/micha/Desktop/CPR/Grafika/prm-logo.jpg" alt="PRM" style="height:50px; margin-right:15px;">
+      <label>PRM:</label>
+      <select id="prm">
+         <option value=""></option>
+         <option>(bez PRM)</option>
+         <option>DM Szczecin</option>
+      </select>
+    </div>
+    <h3>Zgłaszający</h3>
+    <div class="section">
+      <label>Imię:</label>
+      <input type="text" id="firstName" required>
+      <label>Nazwisko:</label>
+      <input type="text" id="lastName" required>
+      <label>Adres:</label>
+      <input type="text" id="personalAddress" class="wide-input" required>
+    </div>
+    <div class="button-group">
+      <button class="save-btn" onclick="saveNewReport(document.getElementById('status').value)">Zapisz</button>
+      <button class="send-btn" onclick="saveNewReport('Przekazane przez CPR')">Wyślij do obsługi</button>
+      <button class="update-btn" onclick="updateReport()">Aktualizuj</button>
+      <button class="close-btn" onclick="showSection('reportsSection')">Zamknij</button>
+      <button class="similar-btn" onclick="openSimilarEvents()">Zdarzenia podobne</button>
+    </div>
+  </section>
+
+  <!-- Sekcja Statystyki -->
+  <section id="statsSection">
+    <h2>Statystyki zgłoszeń</h2>
+    <div class="filters" id="filters"></div>
+    <div id="yearlyStats"></div>
+    <div id="dailyStats"></div>
+  </section>
+
+  <!-- Sekcja Komunikaty -->
+  <section id="notificationsSection">
+    <h2>Lista Komunikatów</h2>
+    <button class="clear-btn" onclick="clearNotifications()">Wyczyść listę komunikatów</button>
+    <table>
+      <thead>
+        <tr>
+          <th>Data i godzina wyświetlenia</th>
+          <th>ID Zdarzenia</th>
+          <th>Data i godzina odczytania</th>
+          <th>Rodzaj komunikatu</th>
+        </tr>
+      </thead>
+      <tbody id="notificationsTable"></tbody>
+    </table>
+  </section>
+
+  <script>
+    /* Funkcja sterująca widocznością sekcji */
+    function showSection(sectionId) {
+      const sections = document.querySelectorAll("section");
+      sections.forEach(sec => sec.style.display = "none");
+      document.getElementById(sectionId).style.display = "block";
+      if(sectionId === "statsSection") { updateTables(); }
+      if(sectionId === "notificationsSection") { loadNotifications(); }
+      if(sectionId === "formSection") {
+        const editReportId = localStorage.getItem("editReportId");
+        if(editReportId) {
+          editReport(editReportId);
+        } else {
+          initializeNewForm();
+          populateMainEventSelect();
+        }
+      }
+    }
+    // Domyślne wyświetlenie listy zgłoszeń
+    showSection("reportsSection");
+
+    /* Główne funkcje aplikacji – pobrane i scalone z poszczególnych stron */
+
+    function loadReports() {
+      let reports = JSON.parse(localStorage.getItem("reports")) || [];
+      reports = reports.filter((report, index, self) => index === self.findIndex(r => r.id === report.id));
+      let filterID = document.getElementById("filterID") ? document.getElementById("filterID").value.trim().toLowerCase() : "";
+      let filterStatus = document.getElementById("filterStatus") ? document.getElementById("filterStatus").value.trim().toLowerCase() : "";
+      let filterDate = document.getElementById("filterDate") ? document.getElementById("filterDate").value : "";
+      let filterAddress = document.getElementById("filterAddress") ? document.getElementById("filterAddress").value.trim().toLowerCase() : "";
+      let filterPriority = document.getElementById("filterPriority") ? document.getElementById("filterPriority").value.trim().toLowerCase() : "";
+      reports = reports.filter(report => {
+        let pass = true;
+        if(filterID && !report.id.toLowerCase().includes(filterID)) pass = false;
+        if(filterStatus && !report.status.toLowerCase().includes(filterStatus)) pass = false;
+        if(filterDate) {
+          let parts = report.dateTime.split(" ")[0].split(".");
+          if(parts.length === 3) {
+            let reportDate = parts[2] + "-" + parts[1] + "-" + parts[0];
+            if(reportDate !== filterDate) pass = false;
+          }
+        }
+        let buildingAndApartment = "";
+        if(report.buildingNumber && report.buildingNumber.trim() !== "") {
+          buildingAndApartment = report.buildingNumber;
+          if(report.apartmentNumber && report.apartmentNumber.trim() !== "") {
+            buildingAndApartment += "/" + report.apartmentNumber;
+          }
+        } else if(report.apartmentNumber && report.apartmentNumber.trim() !== ""){
+          buildingAndApartment = report.apartmentNumber;
+        }
+        let fullAddress = [ report.city, report.street, buildingAndApartment, report.roadNumber ]
+          .filter(item => item && item.trim() !== "").join(", ") || (report.address || "");
+        if(filterAddress && !fullAddress.toLowerCase().includes(filterAddress)) pass = false;
+        if(filterPriority && !String(report.priority).toLowerCase().includes(filterPriority)) pass = false;
+        return pass;
+      });
+      reports.sort((a, b) => {
+        let idA = parseInt(a.id.match(/\d+/)[0]);
+        let idB = parseInt(b.id.match(/\d+/)[0]);
+        return idB - idA;
+      });
+      let tableBody = document.getElementById("reportsTable");
+      let rows = "";
+      let mainEvents = reports.filter(r => !r.mainEventId || r.mainEventId === "");
+      mainEvents.forEach(mainEvent => {
+        let statusClass = "";
+        switch (mainEvent.status) {
+          case "Nowe": statusClass = "status-nowe"; break;
+          case "Przekazane przez CPR": statusClass = "status-przekazane"; break;
+          case "Nieobsługiwane": statusClass = "status-nieobslugiwane"; break;
+          case "Obsługiwane": statusClass = "status-obslugiwane"; break;
+          case "Zakończone": statusClass = "status-zakonczone"; break;
+        }
+        let buildingAndApartment = "";
+        if(mainEvent.buildingNumber && mainEvent.buildingNumber.trim() !== "") {
+          buildingAndApartment = mainEvent.buildingNumber;
+          if(mainEvent.apartmentNumber && mainEvent.apartmentNumber.trim() !== "") {
+            buildingAndApartment += "/" + mainEvent.apartmentNumber;
+          }
+        } else if(mainEvent.apartmentNumber && mainEvent.apartmentNumber.trim() !== ""){
+          buildingAndApartment = mainEvent.apartmentNumber;
+        }
+        let fullAddress = [ mainEvent.city, mainEvent.street, buildingAndApartment, mainEvent.roadNumber ]
+          .filter(item => item && item.trim() !== "").join(", ") || mainEvent.address;
+        rows += `<tr class="${statusClass}" ondblclick="editReport('${mainEvent.id}')">
+                   <td>${mainEvent.id}</td>
+                   <td>${mainEvent.dateTime}</td>
+                   <td>${mainEvent.phone}</td>
+                   <td>${fullAddress}</td>
+                   <td><span class="tooltip" data-tooltip="${mainEvent.description || ''}">${mainEvent.category}</span></td>
+                   <td class="opis-col">${mainEvent.description || ''}</td>
+                   <td>${mainEvent.priority || ""}</td>
+                   <td>${mainEvent.police}</td>
+                   <td>${mainEvent.psp}</td>
+                   <td>${mainEvent.prm}</td>
+                   <td>${mainEvent.status}</td>
+                   <td>${mainEvent.acceptedBy || ""}</td>
+                 </tr>`;
+        let relatedEvents = reports.filter(r => r.mainEventId === mainEvent.id);
+        relatedEvents.forEach(rel => {
+          let policeTime = rel.policeJoinTime ? "Policja: " + rel.policeJoinTime : "";
+          let pspTime = rel.pspJoinTime ? "PSP: " + rel.pspJoinTime : "";
+          let prmTime = rel.prmJoinTime ? "PRM: " + rel.prmJoinTime : "";
+          let timesArr = [policeTime, pspTime, prmTime].filter(s => s !== "");
+          let joinTimeInfo = timesArr.length ? " | Czas dołączenia: " + timesArr.join(", ") : "";
+          rows += `<tr class="related-event" ondblclick="editReport('${rel.id}')">
+                     <td colspan="12" style="padding-left: 30px;">
+                       + Zdarzenie powiązane: ${rel.id} | ${rel.dateTime} | ${rel.phone} | ${rel.category} | Status: ${rel.status}${joinTimeInfo}
+                     </td>
+                   </tr>`;
+        });
+      });
+      tableBody.innerHTML = rows;
+      let activeCount = reports.filter(report => report.status !== "Zakończone").length;
+      document.getElementById("activeEventsCount").textContent = "Aktywne zdarzenia: " + activeCount;
+    }
+    function updateDateTime() {
+      let now = new Date();
+      let timeString = now.toLocaleTimeString("pl-PL", { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      let dateString = now.toLocaleDateString("pl-PL");
+      document.getElementById("currentDateTime").textContent = `${dateString} ${timeString}`;
+    }
+    function toggleFilters() {
+      const filterSection = document.getElementById("filterSection");
+      filterSection.style.display = (filterSection.style.display === "none" || filterSection.style.display === "") ? "block" : "none";
+    }
+    function clearReports() {
+      if (confirm("Czy na pewno chcesz usunąć wszystkie zgłoszenia?")) {
+        localStorage.removeItem("reports");
+        localStorage.removeItem("reportCounter");
+        loadReports();
+      }
+    }
+    function updateStatuses() {
+      let reports = JSON.parse(localStorage.getItem("reports")) || [];
+      let now = Date.now();
+      let updated = false;
+      reports.forEach(report => {
+        if (!report.mainEventId) {
+          if (report.status === "Przekazane przez CPR" && report.statusTimestamp && report.autoDelay) {
+            if (!report.notificationShownPrzekazane) {
+              addNotification({
+                id: report.id,
+                status: report.status,
+                type: "Nowe zdarzenie",
+                message: `Zdarzenie ${report.id} zostało przekazane przez WCPR do obsługi przez służby. Zdarzenie oczekuje na przyjęcie!`,
+                displayedAt: new Date().toISOString(),
+                confirmedAt: null
+              });
+              report.notificationShownPrzekazane = true;
+              var audioPrzekazane = new Audio("file:///C:/Users/micha/Desktop/CPR/nowedzialanie.mp3");
+              audioPrzekazane.play();
+              updated = true;
+            }
+            let elapsed = now - report.statusTimestamp;
+            if (elapsed >= report.autoDelay) {
+              report.prevStatus = report.status;
+              report.status = "Nieobsługiwane";
+              report.statusTimestamp = now;
+              report.autoDelay = Math.floor(Math.random() * (60000 - 10000 + 1)) + 10000;
+              updated = true;
+            }
+          } else if (report.status === "Nieobsługiwane" && report.statusTimestamp && report.autoDelay) {
+            if (!report.notificationShownNieobslugiwane) {
+              addNotification({
+                id: report.id,
+                status: report.status,
+                type: "Komunikat",
+                message: `Zdarzenie ${report.id} zostało przyjęte do obsługi przez służby. Potwierdzono odebranie zdarzenia z WCPR.`,
+                displayedAt: new Date().toISOString(),
+                confirmedAt: null
+              });
+              report.notificationShownNieobslugiwane = true;
+              var audioNieobslugiwane = new Audio("file:///C:/Users/micha/Desktop/CPR/nowykomunikat.mp3");
+              audioNieobslugiwane.play();
+              updated = true;
+            }
+            let elapsed = now - report.statusTimestamp;
+            if (elapsed >= report.autoDelay) {
+              report.prevStatus = report.status;
+              report.status = "Obsługiwane";
+              report.statusTimestamp = now;
+              report.autoDelay = Math.floor(Math.random() * (7200000 - 2400000 + 1)) + 2400000;
+              updated = true;
+            }
+          } else if (report.status === "Obsługiwane" && report.statusTimestamp && report.autoDelay) {
+            let elapsed = now - report.statusTimestamp;
+            if (elapsed >= report.autoDelay) {
+              report.prevStatus = report.status;
+              report.status = "Zakończone";
+              report.statusTimestamp = now;
+              report.autoDelay = null;
+              updated = true;
+            }
+          }
+          if (report.status === "Nowe" || report.status === "Obsługiwane") {
+            report.notificationShownZakonczone = false;
+            report.notificationShownPrzekazane = false;
+            report.notificationShownNieobslugiwane = false;
+          }
+          if (!report.notificationShownNew && report.status === "Nowe") {
+            addNotification({
+              id: report.id,
+              status: report.status,
+              type: "Nowe działanie",
+              message: `Zdarzenie ${report.id} wymaga podjęcia działań przez operatora. Status zdarzenia: Nowe`,
+              displayedAt: new Date().toISOString(),
+              confirmedAt: null
+            });
+            report.notificationShownNew = true;
+            var audioNew = new Audio("file:///C:/Users/micha/Desktop/CPR/nowedzialanie.mp3");
+            audioNew.play();
+            updated = true;
+          }
+          if (!report.notificationShownZakonczone && report.status === "Zakończone" && (report.prevStatus === "Nowe" || report.prevStatus === "Obsługiwane")) {
+            addNotification({
+              id: report.id,
+              status: report.status,
+              type: "Komunikat",
+              message: `Służby zakończyły obsługę zdarzenia ${report.id}. Zdarzenie zostało zamknięte.`,
+              displayedAt: new Date().toISOString(),
+              confirmedAt: null
+            });
+            report.notificationShownZakonczone = true;
+            var audioZakonczone = new Audio("file:///C:/Users/micha/Desktop/CPR/nowykomunikat.mp3");
+            audioZakonczone.play();
+            updated = true;
+          }
+        }
+      });
+      reports.forEach(report => {
+        if (report.mainEventId) {
+          let mainEvent = reports.find(r => r.id === report.mainEventId);
+          if (mainEvent && report.status !== mainEvent.status) {
+            report.prevStatus = report.status;
+            report.status = mainEvent.status;
+            updated = true;
+          }
+        }
+      });
+      if (updated) {
+        localStorage.setItem("reports", JSON.stringify(reports));
+        loadReports();
+      }
+    }
+    function addNotification(notification) {
+      let notifications = JSON.parse(localStorage.getItem("notifications")) || [];
+      let exists = notifications.some(n => n.id === notification.id && n.type === notification.type && !n.confirmedAt);
+      if(exists) return;
+      notifications.push(notification);
+      localStorage.setItem("notifications", JSON.stringify(notifications));
+    }
+    function doLogin() {
+      const login = document.getElementById("loginUser").value;
+      const pass = document.getElementById("loginPass").value;
+      // Używamy wyłącznie loginu operator_27
+      if (login === "operator_27" && pass === "Dudek12166") {
+        localStorage.setItem("loggedIn", login);
+        document.getElementById("loginModal").style.display = "none";
+      } else {
+        document.getElementById("loginError").style.display = "block";
+      }
+    }
+    function doLogout() {
+      localStorage.removeItem("loggedIn");
+      location.reload();
+    }
+    /* Funkcje Formatki */
+    function populateMainEventSelect() {
+      const mainEventSelect = document.getElementById("mainEvent");
+      if(mainEventSelect){
+        mainEventSelect.innerHTML = "";
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = "";
+        mainEventSelect.appendChild(emptyOption);
+        const reports = JSON.parse(localStorage.getItem("reports")) || [];
+        const editReportId = localStorage.getItem("editReportId");
+        const currentReport = editReportId ? reports.find(r => r.id === editReportId) : null;
+        let activeMainEvents = reports.filter(r => (!r.mainEventId || r.mainEventId.trim() === ""));
+        if (currentReport && currentReport.mainEventId) {
+          const mainEventAssigned = reports.find(r => r.id === currentReport.mainEventId);
+          if (mainEventAssigned && !activeMainEvents.some(r => r.id === mainEventAssigned.id)) {
+            activeMainEvents.push(mainEventAssigned);
+          }
+        } else {
+          activeMainEvents = activeMainEvents.filter(r => r.status !== "Zakończone");
+        }
+        activeMainEvents.sort((a, b) => {
+          let idA = parseInt(a.id.match(/\d+/)[0]);
+          let idB = parseInt(b.id.match(/\d+/)[0]);
+          return idB - idA;
+        });
+        activeMainEvents.forEach(event => {
+          const option = document.createElement("option");
+          option.value = event.id;
+          option.textContent = event.id + " - " + event.dateTime;
+          mainEventSelect.appendChild(option);
+        });
+        if (currentReport && currentReport.mainEventId) {
+          mainEventSelect.value = currentReport.mainEventId;
+        }
+      }
+    }
+    function initializeNewForm() {
+      document.getElementById("reportId").textContent = "";
+      document.getElementById("dateTime").textContent = "";
+      document.getElementById("phone").value = "";
+      document.getElementById("city").value = "";
+      document.getElementById("street").value = "";
+      document.getElementById("buildingNumber").value = "";
+      document.getElementById("apartmentNumber").value = "";
+      document.getElementById("roadNumber").value = "";
+      document.getElementById("county").value = "";
+      document.getElementById("commune").value = "";
+      if(document.getElementById("category")) document.getElementById("category").selectedIndex = 0;
+      if(document.getElementById("priority")) document.getElementById("priority").selectedIndex = 0;
+      if(document.getElementById("description")) document.getElementById("description").value = "";
+      if(document.getElementById("police")) document.getElementById("police").selectedIndex = 0;
+      if(document.getElementById("psp")) document.getElementById("psp").selectedIndex = 0;
+      if(document.getElementById("prm")) document.getElementById("prm").selectedIndex = 0;
+      if(document.getElementById("firstName")) document.getElementById("firstName").value = "";
+      if(document.getElementById("lastName")) document.getElementById("lastName").value = "";
+      if(document.getElementById("personalAddress")) document.getElementById("personalAddress").value = "";
+      const now = new Date();
+      const day = ("0" + now.getDate()).slice(-2);
+      const month = ("0" + (now.getMonth() + 1)).slice(-2);
+      const year = now.getFullYear();
+      const hours = ("0" + now.getHours()).slice(-2);
+      const minutes = ("0" + now.getMinutes()).slice(-2);
+      const dateTime = day + "." + month + "." + year + " " + hours + ":" + minutes;
+      document.getElementById("dateTime").textContent = dateTime;
+      const currentCounter = parseInt(localStorage.getItem("reportCounter")) || 0;
+      const newReportId = "ZD/" + (currentCounter + 1) + "/SZC/" + day + month + year;
+      document.getElementById("reportId").textContent = newReportId;
+    }
+    function saveNewReport(statusValue) {
+      const id = document.getElementById("reportId").textContent;
+      const reports = JSON.parse(localStorage.getItem("reports")) || [];
+      const editReportId = localStorage.getItem("editReportId");
+      if (!editReportId && reports.some(report => report.id === id)) {
+        alert("Zdarzenie o tym ID już istnieje. Nie można tworzyć zdarzeń o tym samym identyfikatorze.");
+        return;
+      }
+      const dateTime = document.getElementById("dateTime").textContent;
+      const phone = document.getElementById("phone").value;
+      const city = document.getElementById("city").value;
+      const street = document.getElementById("street").value;
+      const buildingNumber = document.getElementById("buildingNumber").value;
+      const apartmentNumber = document.getElementById("apartmentNumber").value;
+      const roadNumber = document.getElementById("roadNumber").value;
+      const county = document.getElementById("county").value;
+      const commune = document.getElementById("commune").value;
+      let buildingAndApartment = "";
+      if(buildingNumber.trim() !== "") {
+        buildingAndApartment = buildingNumber;
+        if(apartmentNumber.trim() !== "") { buildingAndApartment += "/" + apartmentNumber; }
+      } else if(apartmentNumber.trim() !== "") {
+        buildingAndApartment = apartmentNumber;
+      }
+      const addressParts = [];
+      if(city.trim() !== "") addressParts.push(city);
+      if(street.trim() !== "") addressParts.push(street);
+      if(buildingAndApartment !== "") addressParts.push(buildingAndApartment);
+      if(roadNumber.trim() !== "") addressParts.push(roadNumber);
+      const address = addressParts.join(", ");
+      const category = document.getElementById("category").value;
+      const priority = document.getElementById("priority").value;
+      const description = document.getElementById("description").value;
+      const police = document.getElementById("police").value;
+      const psp = document.getElementById("psp").value;
+      const prm = document.getElementById("prm").value;
+      const firstName = document.getElementById("firstName").value;
+      const lastName = document.getElementById("lastName").value;
+      const personalAddress = document.getElementById("personalAddress").value;
+      const status = statusValue;
+      const mainEventId = document.getElementById("mainEvent") ? document.getElementById("mainEvent").value : "";
+      // Pobieramy operatora z logowania
+      const acceptedBy = localStorage.getItem("loggedIn") || "";
+      const report = {
+         id, dateTime, phone, address, city, street, buildingNumber, apartmentNumber,
+         roadNumber, county, commune, category, priority, description, police, psp, prm,
+         firstName, lastName, personalAddress, status,
+         acceptedBy: acceptedBy,
+         statusTimestamp: Date.now(),
+         autoDelay: null,
+         mainEventId
+      };
+      if (status === "Przekazane przez CPR") {
+         report.autoDelay = Math.floor(Math.random() * (30000 - 15000 + 1)) + 15000;
+      } else if (status === "Nieobsługiwane") {
+         report.autoDelay = Math.floor(Math.random() * (60000 - 10000 + 1)) + 10000;
+      }
+      if(mainEventId) {
+         const nowTime = new Date().toLocaleTimeString("pl-PL", { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+         if(police.trim() !== "") { report.policeJoinTime = nowTime; }
+         if(psp.trim() !== "") { report.pspJoinTime = nowTime; }
+         if(prm.trim() !== "") { report.prmJoinTime = nowTime; }
+         const mainEvent = reports.find(r => r.id === mainEventId);
+         if(mainEvent) {
+           if(mainEvent.description && mainEvent.description.trim() !== "") {
+             mainEvent.description = mainEvent.description + "\n---------------\n" + description;
+           } else {
+             mainEvent.description = description;
+           }
+           report.status = mainEvent.status;
+         }
+      }
+      if (editReportId) {
+         const index = reports.findIndex(r => r.id === editReportId);
+         if (index !== -1) {
+            reports[index] = report;
+         } else {
+            reports.push(report);
+         }
+      } else {
+         const currentCounter = parseInt(localStorage.getItem("reportCounter")) || 0;
+         localStorage.setItem("reportCounter", currentCounter + 1);
+         reports.push(report);
+      }
+      localStorage.setItem("reports", JSON.stringify(reports));
+      alert("Dane zostały zapisane jako: " + report.status);
+      localStorage.removeItem("editReportId");
+      showSection("reportsSection");
+      loadReports();
+    }
+    function updateReport() { saveNewReport(document.getElementById("status").value); }
+    function editReport(reportId) {
+      localStorage.setItem("editReportId", reportId);
+      showSection("formSection");
+      const reports = JSON.parse(localStorage.getItem("reports")) || [];
+      const report = reports.find(r => r.id === reportId);
+      if (report) {
+         document.getElementById("reportId").textContent = report.id;
+         document.getElementById("dateTime").textContent = report.dateTime;
+         document.getElementById("phone").value = report.phone;
+         document.getElementById("city").value = report.city || "";
+         document.getElementById("street").value = report.street || "";
+         document.getElementById("buildingNumber").value = report.buildingNumber || "";
+         document.getElementById("apartmentNumber").value = report.apartmentNumber || "";
+         document.getElementById("roadNumber").value = report.roadNumber || "";
+         document.getElementById("county").value = report.county || "";
+         document.getElementById("commune").value = report.commune || "";
+         document.getElementById("category").value = report.category;
+         document.getElementById("priority").value = report.priority || "";
+         document.getElementById("description").value = report.description;
+         document.getElementById("police").value = report.police;
+         document.getElementById("psp").value = report.psp;
+         document.getElementById("prm").value = report.prm;
+         document.getElementById("firstName").value = report.firstName;
+         document.getElementById("lastName").value = report.lastName;
+         document.getElementById("personalAddress").value = report.personalAddress;
+         document.getElementById("status").value = report.status;
+         populateMainEventSelect();
+      } else {
+         alert("Nie znaleziono zgłoszenia o ID: " + reportId);
+      }
+    }
+    /* Autocomplete – adresy */
+    function updateAutocomplete(fieldId, storageKey, datalistId) {
+      const input = document.getElementById(fieldId);
+      const datalist = document.getElementById(datalistId);
+      let storedValues = JSON.parse(localStorage.getItem(storageKey)) || [];
+      const value = input.value.trim();
+      if (value !== "" && !storedValues.includes(value)) {
+        storedValues.push(value);
+        localStorage.setItem(storageKey, JSON.stringify(storedValues));
+        const option = document.createElement("option");
+        option.value = value;
+        datalist.appendChild(option);
+      }
+    }
+    function loadAutocomplete(storageKey, datalistId) {
+      const datalist = document.getElementById(datalistId);
+      datalist.innerHTML = "";
+      const storedValues = JSON.parse(localStorage.getItem(storageKey)) || [];
+      storedValues.forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        datalist.appendChild(option);
+      });
+    }
+    window.addEventListener("load", function() {
+      if(document.getElementById("city")) {
+        document.getElementById("city").addEventListener("blur", function() {
+          updateAutocomplete("city", "cityAutocomplete", "cityList");
+        });
+      }
+      if(document.getElementById("street")) {
+        document.getElementById("street").addEventListener("blur", function() {
+          updateAutocomplete("street", "streetAutocomplete", "streetList");
+        });
+      }
+      if(document.getElementById("buildingNumber")) {
+        document.getElementById("buildingNumber").addEventListener("blur", function() {
+          updateAutocomplete("buildingNumber", "buildingNumberAutocomplete", "buildingNumberList");
+        });
+      }
+      if(document.getElementById("apartmentNumber")) {
+        document.getElementById("apartmentNumber").addEventListener("blur", function() {
+          updateAutocomplete("apartmentNumber", "apartmentNumberAutocomplete", "apartmentNumberList");
+        });
+      }
+      if(document.getElementById("roadNumber")) {
+        document.getElementById("roadNumber").addEventListener("blur", function() {
+          updateAutocomplete("roadNumber", "roadNumberAutocomplete", "roadNumberList");
+        });
+      }
+      if(document.getElementById("county")) {
+        document.getElementById("county").addEventListener("blur", function() {
+          updateAutocomplete("county", "countyAutocomplete", "countyList");
+        });
+      }
+      if(document.getElementById("commune")) {
+        document.getElementById("commune").addEventListener("blur", function() {
+          updateAutocomplete("commune", "communeAutocomplete", "communeList");
+        });
+      }
+      loadAutocomplete("cityAutocomplete", "cityList");
+      loadAutocomplete("streetAutocomplete", "streetList");
+      loadAutocomplete("buildingNumberAutocomplete", "buildingNumberList");
+      loadAutocomplete("apartmentNumberAutocomplete", "apartmentNumberList");
+      loadAutocomplete("roadNumberAutocomplete", "roadNumberList");
+      loadAutocomplete("countyAutocomplete", "countyList");
+      loadAutocomplete("communeAutocomplete", "communeList");
+    });
+    /* Statystyki */
+    function generateStatistics() {
+      const reports = JSON.parse(localStorage.getItem("reports")) || [];
+      const stats = {};
+      const yearStats = {};
+      reports.forEach(report => {
+        const datePart = report.dateTime.split(" ")[0];
+        const parts = datePart.split(".");
+        const year = parts[2];
+        if (!stats[datePart]) {
+          stats[datePart] = { total: 0, police: 0, psp: 0, prm: 0, pomylka: 0, zlosliwe: 0, niezasadne: 0 };
+        }
+        stats[datePart].total++;
+        if (report.police && report.police.trim() !== "") stats[datePart].police++;
+        if (report.psp && report.psp.trim() !== "") stats[datePart].psp++;
+        if (report.prm && report.prm.trim() !== "") stats[datePart].prm++;
+        if (report.category === "CPR/ pomyłka") stats[datePart].pomylka++;
+        else if (report.category === "CPR/ złośliwe") stats[datePart].zlosliwe++;
+        else if (report.category === "CPR/ niezasadne") stats[datePart].niezasadne++;
+        if (!yearStats[year]) {
+          yearStats[year] = { total: 0, police: 0, psp: 0, prm: 0, pomylka: 0, zlosliwe: 0, niezasadne: 0 };
+        }
+        yearStats[year].total++;
+        if (report.police && report.police.trim() !== "") yearStats[year].police++;
+        if (report.psp && report.psp.trim() !== "") yearStats[year].psp++;
+        if (report.prm && report.prm.trim() !== "") yearStats[year].prm++;
+        if (report.category === "CPR/ pomyłka") yearStats[year].pomylka++;
+        else if (report.category === "CPR/ złośliwe") yearStats[year].zlosliwe++;
+        else if (report.category === "CPR/ niezasadne") yearStats[year].niezasadne++;
+      });
+      return { stats, yearStats };
+    }
+    function buildDailyTable(stats, filterDate = null) {
+      let dates = Object.keys(stats);
+      if (filterDate) dates = dates.filter(date => date === filterDate);
+      const sortedDates = dates.sort((a, b) => {
+        const [dayA, monthA, yearA] = a.split('.').map(Number);
+        const [dayB, monthB, yearB] = b.split('.').map(Number);
+        return new Date(yearB, monthB - 1, dayB) - new Date(yearA, monthA - 1, dayA);
+      });
+      let html = "<table>";
+      html += "<tr><th>Data</th><th>Liczba zgłoszeń</th><th>Zdarzenia dla Policji</th><th>Zdarzenia dla PSP</th><th>Zdarzenia dla PRM</th><th>Zdarzenia pomyłka</th><th>Zdarzenia złośliwe</th><th>Zdarzenia niezasadne</th></tr>";
+      sortedDates.forEach(date => {
+        html += `<tr>
+                   <td>${date}</td>
+                   <td>${stats[date].total}</td>
+                   <td>${stats[date].police}</td>
+                   <td>${stats[date].psp}</td>
+                   <td>${stats[date].prm}</td>
+                   <td>${stats[date].pomylka}</td>
+                   <td>${stats[date].zlosliwe}</td>
+                   <td>${stats[date].niezasadne}</td>
+                 </tr>`;
+      });
+      html += "</table>";
+      return html;
+    }
+    function buildYearlyTable(yearStats, filterYear = null) {
+      let years = Object.keys(yearStats);
+      if (filterYear) years = years.filter(year => year === filterYear);
+      const sortedYears = years.sort((a, b) => b - a);
+      let html = "<table>";
+      html += "<tr><th>Rok</th><th>Liczba zgłoszeń</th><th>Zdarzenia dla Policji</th><th>Zdarzenia dla PSP</th><th>Zdarzenia dla PRM</th><th>Zdarzenia pomyłka</th><th>Zdarzenia złośliwe</th><th>Zdarzenia niezasadne</th></tr>";
+      sortedYears.forEach(yr => {
+        html += `<tr>
+                   <td>${yr}</td>
+                   <td>${yearStats[yr].total}</td>
+                   <td>${yearStats[yr].police}</td>
+                   <td>${yearStats[yr].psp}</td>
+                   <td>${yearStats[yr].prm}</td>
+                   <td>${yearStats[yr].pomylka}</td>
+                   <td>${yearStats[yr].zlosliwe}</td>
+                   <td>${yearStats[yr].niezasadne}</td>
+                 </tr>`;
+      });
+      html += "</table>";
+      return html;
+    }
+    function updateTables() {
+      const { stats, yearStats } = generateStatistics();
+      const selectedDate = document.getElementById("dateFilter") ? document.getElementById("dateFilter").value.trim() : "";
+      const selectedYear = document.getElementById("yearFilter") ? document.getElementById("yearFilter").value.trim() : "";
+      const yearlyHTML = buildYearlyTable(yearStats, selectedYear !== "" ? selectedYear : null);
+      const dailyHTML = buildDailyTable(stats, selectedDate !== "" ? selectedDate : null);
+      document.getElementById("yearlyStats").innerHTML = "<h3>Podsumowanie roku</h3>" + yearlyHTML;
+      document.getElementById("dailyStats").innerHTML = "<h3>Statystyki dzienne</h3>" + dailyHTML;
+    }
+    function buildFilters() {
+      if(document.getElementById("filters")){
+        document.getElementById("filters").innerHTML =
+          'Filtruj po dacie: <input type="text" id="dateFilter" placeholder="DD.MM.YYYY" oninput="updateTables()"> ' +
+          'Filtruj po roku: <input type="text" id="yearFilter" placeholder="YYYY" oninput="updateTables()">';
+      }
+    }
+    buildFilters();
+    /* Komunikaty */
+    function loadNotifications() {
+      const notifications = JSON.parse(localStorage.getItem("notifications")) || [];
+      notifications.sort((a, b) => new Date(b.displayedAt) - new Date(a.displayedAt));
+      const tableBody = document.getElementById("notificationsTable");
+      let rows = "";
+      notifications.forEach(notif => {
+        rows += `<tr>
+                   <td>${new Date(notif.displayedAt).toLocaleString("pl-PL")}</td>
+                   <td>${notif.id}</td>
+                   <td>${notif.confirmedAt ? new Date(notif.confirmedAt).toLocaleString("pl-PL") : ""}</td>
+                   <td>${notif.type}</td>
+                 </tr>`;
+      });
+      tableBody.innerHTML = rows;
+    }
+    function clearNotifications() {
+      localStorage.removeItem("notifications");
+      loadNotifications();
+    }
+    function openGeoSystem() {
+      window.open("https://www.google.com/maps/@53.5367003,15.6533863,182658m/data=!3m1!1e3?hl=pl-PL", "_blank", "width=800,height=600");
+    }
+    // Aktualizacje czasu, statusów i listy zgłoszeń
+    setInterval(updateDateTime, 1000);
+    setInterval(updateStatuses, 1000);
+    setInterval(loadReports, 1000);
+    // Obsługa logowania
+    window.onload = function() {
+      if (!localStorage.getItem("loggedIn")) {
+        document.getElementById("loginModal").style.display = "block";
+      }
+    };
+  </script>
+</body>
+</html>
